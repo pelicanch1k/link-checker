@@ -11,10 +11,7 @@ const (
 )
 
 type Task struct {
-	ID        string
-	Links     []Link
-	Status    TaskStatus
-	LinksNum  int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID        int       `json:"id"`
+	Links     []Link    `json:"links"`
+	CreatedAt time.Time `json:"created_at"`
 }

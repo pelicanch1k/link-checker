@@ -1,18 +1,18 @@
 package checker
 
-import "net/http"
-
-// DTO для UseCase
 type CheckLinksInput struct {
 	URLs []string
 }
 
 type CheckLinksOutput struct {
+	TaskID   int
 	Links    map[string]string
-	LinksNum int
 }
 
-type LinkCheckerUseCase struct {
-	httpClient *http.Client
-	workerCount int
+type CheckLinksByIDsInput struct {
+	LinksList []int
+}
+
+type CheckLinksByIDsOutput struct {
+	PDFData []byte
 }

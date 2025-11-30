@@ -1,24 +1,38 @@
 package checker
 
 import (
+	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/pelicanch1k/link-checker/internal/adapter/repository"
 	"github.com/pelicanch1k/link-checker/internal/domain"
 )
 
-func NewLinkCheckerUseCase(timeout time.Duration, workerCount int) *LinkCheckerUseCase {
+type LinkCheckerUseCase struct {
+	httpClient   *http.Client
+	workerCount  int
+	taskRepo     repository.TaskRepository
+	pdfGenerator PDFGenerator
+}
+
+type PDFGenerator interface {
+	GenerateReport(tasks []*domain.Task) ([]byte, error)
+}
+
+func NewLinkCheckerUseCase(timeout time.Duration, workerCount int, repo repository.TaskRepository, pdfGen PDFGenerator) *LinkCheckerUseCase {
 	return &LinkCheckerUseCase{
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
-		workerCount: workerCount,
+		workerCount:  workerCount,
+		taskRepo:     repo,
+		pdfGenerator: pdfGen,
 	}
 }
 
 func (uc *LinkCheckerUseCase) checkURL(url string) domain.LinkStatus {
-	// Добавляем схему, если её нет
 	if len(url) > 0 && url[0] != 'h' {
 		url = "http://" + url
 	}
@@ -71,7 +85,6 @@ func (uc *LinkCheckerUseCase) CheckLinks(input CheckLinksInput) (*CheckLinksOutp
 		}()
 	}
 
-	// Отправляем задачи
 	go func() {
 		for i := range links {
 			jobs <- i
@@ -79,21 +92,31 @@ func (uc *LinkCheckerUseCase) CheckLinks(input CheckLinksInput) (*CheckLinksOutp
 		close(jobs)
 	}()
 
-	// Ждем результаты
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
 
-	// Обновляем статсы
 	for result := range results {
 		links[result.index].Status = result.status
 	}
 
+	// Получаем новый ID и сохраняем задачу
+	taskID := uc.taskRepo.GetNextID()
+	task := &domain.Task{
+		ID:        taskID,
+		Links:     links,
+		CreatedAt: time.Now(),
+	}
+
+	if err := uc.taskRepo.Save(task); err != nil {
+		return nil, err
+	}
+
 	// Формируем результат
 	output := &CheckLinksOutput{
-		Links:    make(map[string]string),
-		LinksNum: len(links),
+		TaskID: taskID,
+		Links:  make(map[string]string),
 	}
 
 	for _, link := range links {
@@ -101,4 +124,33 @@ func (uc *LinkCheckerUseCase) CheckLinks(input CheckLinksInput) (*CheckLinksOutp
 	}
 
 	return output, nil
+}
+
+func (uc *LinkCheckerUseCase) CheckLinksByIDs(input CheckLinksByIDsInput) (*CheckLinksByIDsOutput, error) {
+	if len(input.LinksList) == 0 {
+		log.Fatal("нет ссылок")
+		return nil, domain.ErrEmptyURLs
+	}
+
+	tasks, err := uc.taskRepo.FindByIDs(input.LinksList)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	if len(tasks) == 0 {
+		log.Fatal(err)
+		return nil, domain.ErrTaskNotFound
+	}
+
+	// Генерируем PDF
+	pdfData, err := uc.pdfGenerator.GenerateReport(tasks)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+
+	return &CheckLinksByIDsOutput{
+		PDFData: pdfData,
+	}, nil
 }

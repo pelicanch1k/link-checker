@@ -7,6 +7,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pelicanch1k/link-checker/internal/adapter/pdf"
+	"github.com/pelicanch1k/link-checker/internal/adapter/repository"
 	"github.com/pelicanch1k/link-checker/internal/checker"
 	httpController "github.com/pelicanch1k/link-checker/internal/controller/http"
 
@@ -15,7 +17,9 @@ import (
 
 func main() {
 	// Инициализация слоев
-	useCase := checker.NewLinkCheckerUseCase(5*time.Second, 10)
+	repo := repository.NewInMemoryTaskRepository()
+	pdfGen := pdf.NewPDFGenerator()
+	useCase := checker.NewLinkCheckerUseCase(5*time.Second, 10, repo, pdfGen)
 	controller := httpController.NewHTTPController(useCase)
 
 	// Fiber app
